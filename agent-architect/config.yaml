@@ -1,0 +1,43 @@
+# AI 智能体架构师配置文件
+
+# LLM 配置
+llm:
+  provider: ollama  # 支持：ollama, openai, custom
+  model: qwen:8b    # 本地模型：qwen:8b
+  base_url: http://localhost:11434  # Ollama 服务地址
+  temperature: 0.7
+  top_p: 0.9
+  max_tokens: 2048
+  timeout: 30
+
+# DSL 配置
+dsl:
+  version: "0.1"
+  default_model: qwen:8b
+  max_nodes: 20
+  supported_node_types:
+    - input
+    - llm
+    - function
+    - output
+    - condition
+    - loop
+
+# API 服务配置
+server:
+  host: 0.0.0.0
+  port: 8000
+  reload: true
+  log_level: info
+
+# 日志配置
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: logs/agent_architect.log
+
+# Dify 集成配置
+dify:
+  tool_name: "AI Agent Architect"
+  tool_description: "根据自然语言需求自动生成 Dify DSL 工作流配置"
+  version: "0.1.0"
