@@ -14,6 +14,7 @@ import uvicorn
 import yaml
 
 from dsl_generator import DSLGenerator
+from dify_format import DifyDSLFormatter
 
 
 # ============== 配置 ==============
@@ -59,6 +60,10 @@ class GenerateRequest(BaseModel):
         False,
         description="是否保存生成的 DSL 到文件"
     )
+    format: Optional[str] = Field(
+        "simple",
+        description="导出格式: simple (推荐) 或 dify"
+    )
 
 
 class ValidateRequest(BaseModel):
@@ -96,6 +101,9 @@ generator = DSLGenerator(
     model=config.get("llm", {}).get("model", "qwen:8b")
 )
 
+# Dify 格式转换器
+formatter = DifyDSLFormatter()
+
 
 # ============== API 路由 ==============
 
@@ -110,6 +118,7 @@ async def root():
             "generate": "/api/generate",
             "validate": "/api/validate",
             "optimize": "/api/optimize",
+            "format": "/api/format",
             "history": "/api/history",
             "health": "/api/health"
         }
@@ -146,10 +155,15 @@ async def generate_dsl(request: GenerateRequest):
     3. 生成 DSL 结构
     4. 验证与优化
     
+    ## 格式：
+    - simple: 简化格式（推荐用于 Dify 导入）
+    - dify: Dify 官方格式
+    
     ## 示例请求：
     ```json
     {
-        "requirement": "我需要一个智能体，能根据用户输入的查询，调用搜索工具并返回结果。输入字段是'query'，输出字段是'result'。"
+        "requirement": "我需要一个智能体，能根据用户输入的查询，调用搜索工具并返回结果。输入字段是'query'，输出字段是'result'。",
+        "format": "simple"
     }
     ```
     """
@@ -159,13 +173,25 @@ async def generate_dsl(request: GenerateRequest):
         # 生成 DSL
         result = generator.generate_from_requirement(request.requirement)
         
-        # 保存文件
-        if request.save_to_file and result["status"] == "success":
-            output_dir = Path("output")
-            output_dir.mkdir(exist_ok=True)
-            filepath = output_dir / "generated_dsl.json"
-            generator.save_dsl(result["dsl"], str(filepath))
-            result["saved_to"] = str(filepath)
+        if result["status"] == "success":
+            # 转换格式
+            dsl = result["dsl"]
+            if request.format == "dify":
+                dsl = formatter.to_dify_format(dsl)
+            else:  # default to simple
+                dsl = formatter.to_simple_format(dsl)
+            
+            result["dsl"] = dsl
+            
+            # 保存文件
+            if request.save_to_file:
+                output_dir = Path("output")
+                output_dir.mkdir(exist_ok=True)
+                filename = f"dsl_{request.format}.json"
+                filepath = output_dir / filename
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(dsl, f, indent=2, ensure_ascii=False)
+                result["saved_to"] = str(filepath)
         
         return DSLResponse(
             status=result.get("status", "error"),
@@ -179,6 +205,30 @@ async def generate_dsl(request: GenerateRequest):
     
     except Exception as e:
         logger.error(f"生成失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/format")
+async def convert_dsl_format(dsl: dict = Body(...), target_format: str = "simple"):
+    """
+    转换 DSL 格式
+    
+    - simple: 简化格式（推荐用于导入）
+    - dify: Dify 官方格式
+    """
+    try:
+        if target_format == "dify":
+            converted = formatter.to_dify_format(dsl)
+        else:
+            converted = formatter.to_simple_format(dsl)
+        
+        return {
+            "status": "success",
+            "format": target_format,
+            "dsl": converted
+        }
+    except Exception as e:
+        logger.error(f"格式转换失败: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
